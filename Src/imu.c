@@ -28,8 +28,9 @@ void IMU_Init()
 	SENSOR_Config();
 	FIFO_Config();
 	ReadAccelerometerAtRest();
+	GPIOA->ODR |= GPIO_ODR_11;
 	READ_DATA();
-//	CALC_VELOCITY();
+	GPIOA->ODR &= ~GPIO_ODR_11;
 }
 
 void SENSOR_Config()
@@ -67,7 +68,7 @@ void FIFO_Config()
 void READ_DATA()
 {
 
-	int data_index = 0;
+	int data_index = 1;
 	float acc_x_data[MAX_DATA_POINTS];
 	float acc_y_data[MAX_DATA_POINTS];
 	float acc_z_data[MAX_DATA_POINTS];
@@ -83,6 +84,80 @@ void READ_DATA()
 //		uint16_t index = 0;
 //	}
 	//HAL_StatusTypeDef res = HAL_UART_Transmit(&huart3, &buffer, 1, HAL_MAX_DELAY);
+
+	int collect = 0;
+
+	while (!collect){
+		uint8_t Acc_X_L[1];
+		HAL_I2C_Mem_Read(&hi2c1, hi2c1.Init.OwnAddress1, OUTX_L_XL_ADDRESS, 1, &Acc_X_L[0], 1, 100);
+		uint8_t Acc_X_H[1];
+		HAL_I2C_Mem_Read(&hi2c1, hi2c1.Init.OwnAddress1, OUTX_H_XL_ADDRESS, 1, &Acc_X_H[0], 1, 100);
+		uint16_t acc_x_raw = (Acc_X_H[0] << 8) | Acc_X_L[0];
+		if(acc_x_raw > 32768) {
+			acc_x_raw = (~acc_x_raw + 1);
+		}
+		float acc_x = (9.8 * (acc_x_raw *ACC_SENS) / 1000);
+		uint8_t Acc_Y_L[1];
+		HAL_I2C_Mem_Read(&hi2c1, hi2c1.Init.OwnAddress1, OUTY_L_XL_ADDRESS, 1, &Acc_Y_L[0], 1, 100);
+		uint8_t Acc_Y_H[1];
+		HAL_I2C_Mem_Read(&hi2c1, hi2c1.Init.OwnAddress1, OUTY_H_XL_ADDRESS, 1, &Acc_Y_H[0], 1, 100);
+		uint16_t acc_y_raw = Acc_Y_L[0] | (Acc_Y_H[0] << 8);
+		if(acc_y_raw > 32768) {
+			acc_y_raw = (~acc_y_raw + 1);
+		}
+		float acc_y = (9.8 * (acc_y_raw *ACC_SENS) / 1000);
+		uint8_t Acc_Z_L[1];
+		HAL_I2C_Mem_Read(&hi2c1, hi2c1.Init.OwnAddress1, OUTZ_L_XL_ADDRESS, 1, &Acc_Z_L[0], 1, 100);
+		uint8_t Acc_Z_H[1];
+		HAL_I2C_Mem_Read(&hi2c1, hi2c1.Init.OwnAddress1, OUTZ_H_XL_ADDRESS, 1, &Acc_Z_H[0], 1, 100);
+		uint16_t acc_z_raw = Acc_Z_L[0] | (Acc_Z_H[0] << 8);
+		if(acc_z_raw > 32768) {
+			acc_z_raw = (~acc_z_raw + 1);
+		}
+		float acc_z = (9.8 * (acc_z_raw *ACC_SENS) / 1000) - acc_z_offset;
+		uint8_t Gyro_X_L[1];
+		HAL_StatusTypeDef  X = HAL_I2C_Mem_Read(&hi2c1, hi2c1.Init.OwnAddress1, OUTX_L_G_ADDRESS, 1, &Gyro_X_L[0], 1, 100);
+		uint8_t Gyro_X_H[1];
+		HAL_StatusTypeDef X2 = HAL_I2C_Mem_Read(&hi2c1, hi2c1.Init.OwnAddress1, OUTX_H_G_ADDRESS, 1, &Gyro_X_H[0], 1, 100);
+		uint16_t gyro_x_raw = Gyro_X_L[0] | (Gyro_X_H[0] << 8);
+		if(gyro_x_raw > 32768) {
+			gyro_x_raw = (~gyro_x_raw + 1);
+		}
+		float gyro_x = ((gyro_x_raw *GYRO_SENS/1000));
+		uint8_t Gyro_Y_L[1];
+		HAL_StatusTypeDef Y = HAL_I2C_Mem_Read(&hi2c1, hi2c1.Init.OwnAddress1, OUTY_L_G_ADDRESS, 1, &Gyro_Y_L[0], 1, 100);
+		uint8_t Gyro_Y_H[1];
+		HAL_StatusTypeDef Y2 = HAL_I2C_Mem_Read(&hi2c1, hi2c1.Init.OwnAddress1, OUTY_H_G_ADDRESS, 1, &Gyro_Y_H[0], 1, 100);
+		uint16_t gyro_y_raw = Gyro_Y_L[0] | (Gyro_Y_H[0] << 8);
+	    if(gyro_y_raw > 32768) {
+	    	gyro_y_raw = (~gyro_y_raw + 1);
+	    }
+		float gyro_y = ((gyro_y_raw *GYRO_SENS/1000));
+		uint8_t Gyro_Z_L[1];
+		HAL_StatusTypeDef Z = HAL_I2C_Mem_Read(&hi2c1, hi2c1.Init.OwnAddress1, OUTZ_L_G_ADDRESS, 1, &Gyro_Z_L[0], 1, 100);
+		uint8_t Gyro_Z_H[1];
+		HAL_StatusTypeDef Z2 = HAL_I2C_Mem_Read(&hi2c1, hi2c1.Init.OwnAddress1, OUTZ_H_G_ADDRESS, 1, &Gyro_Z_H[0], 1, 100);
+		uint16_t gyro_z_raw = Gyro_Z_L[0] | (Gyro_Z_H[0] << 8);
+	    if(gyro_z_raw > 32768) {
+	    	gyro_z_raw = (~gyro_z_raw + 1);
+	    }
+		float gyro_z = ((gyro_z_raw *GYRO_SENS/1000));
+
+		/*
+		 * THIS WHILE LOOP COLLECTS DATA CONTINUOUSLY UNTIL IT COLLECTS A VALUE WITH A MAGNITUDE > 5 m/s^2 IN ANY OF THE 3 ACC AXES
+		 * ONCE IT DETECTS ACCELERATION ABOVE THE THRESHOLD VALUE IT PROCEEDS TO SAVE FOLLOWING MAX_DATA_POINTS DATA POINTS
+		 */
+
+		if ((acc_x > THRESHOLD) || (acc_x < ((-1) * THRESHOLD)) || (acc_y > THRESHOLD) || (acc_y < ((-1) * THRESHOLD)) || (acc_z > THRESHOLD) || (acc_z < ((-1) * THRESHOLD))) {
+			collect = 1;
+			acc_x_data[0] = acc_x;
+			acc_y_data[0] = acc_y;
+			acc_z_data[0] = acc_z;
+			gyro_x_data[0] = gyro_x;
+			gyro_y_data[0] = gyro_y;
+			gyro_z_data[0] = gyro_z;
+		}
+	}
 
 	while(data_index != MAX_DATA_POINTS) {
 		//Linear acceleration sesitivity: FS +-16 is .488
@@ -160,7 +235,7 @@ void READ_DATA()
 	    gyro_z_data[data_index] = gyro_z;
 
 	    // Increment data_index (wrap around if it exceeds MAX_DATA_POINTS)
-	    data_index = (data_index + 1);
+	    data_index++;
 	    //HAL_Delay(3000);
 	}
 
